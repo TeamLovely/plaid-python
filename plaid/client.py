@@ -1,10 +1,10 @@
 import json
+
+import requests
 try:
     from urllib.parse import urljoin
 except ImportError:
     from urlparse import urljoin
-
-from plaid.http import http_request
 
 # @todo Sandboxing?
 # @todo "Single Request Call"
@@ -120,10 +120,10 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        response = http_request(url, 'POST', data)
+        response = requests.post(url, data)
 
         if response.ok:
-            json_data = json.loads(response.content)
+            json_data = response.json()
             if 'access_token' in json_data:
                 self.access_token = json_data['access_token']
 
@@ -166,10 +166,10 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        response = http_request(url, 'POST', data)
+        response = requests.post(url, data)
 
         if response.ok:
-            json_data = json.loads(response.content)
+            json_data = response.json()
             if 'access_token' in json_data:
                 self.access_token = json_data['access_token']
 
@@ -207,7 +207,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'POST', data)
+        return requests.post(url, data)
 
     @require_access_token
     def auth_step(self, account_type, mfa, options=None):
@@ -241,7 +241,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'POST', data)
+        return requests.post(url, data)
 
     @require_access_token
     def upgrade(self, upgrade_to):
@@ -258,7 +258,7 @@ class Client(object):
             'upgrade_to': upgrade_to
         }
 
-        return http_request(url, 'POST', data)
+        return requests.post(url, data)
 
 
     @require_access_token
@@ -274,7 +274,7 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'DELETE', data)
+        return requests.delete(url, data)
 
 
     @require_access_token
@@ -300,7 +300,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
+        return requests.get(url, data)
 
     def entity(self, entity_id, options=None):
         """
@@ -309,14 +309,14 @@ class Client(object):
         `entity_id`     str     Entity id to fetch
         """
         url = urljoin(self.url, self.endpoints['entity'])
-        return http_request(url, 'GET', {'entity_id': entity_id})
+        return requests.get(url, {'entity_id': entity_id})
 
     def categories(self):
         """
         Fetch all categories
         """
         url = urljoin(self.url, self.endpoints['categories'])
-        return http_request(url, 'GET')
+        return requests.get(url)
 
     def category(self, category_id, options=None):
         """
@@ -325,7 +325,7 @@ class Client(object):
         `category_id`   str     Category id to fetch
         """
         url = urljoin(self.url, self.endpoints['category']) % category_id
-        return http_request(url, 'GET')
+        return requests.get(url)
 
     def categories_by_mapping(self, mapping, category_type, options=None):
         """
@@ -351,7 +351,7 @@ class Client(object):
         }
         if options:
             data['options'] = json.dumps(options)
-        return http_request(url, 'GET', data)
+        return requests.get(url, data)
 
     @require_access_token
     def balance(self, options=None):
@@ -370,7 +370,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
+        return requests.get(url, data)
 
     @require_access_token
     def numbers(self):
@@ -385,11 +385,11 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'POST', data)
+        return requests.post(url, data)
 
     def institutions(self):
         """
         Fetch the available institutions
         """
         url = urljoin(self.url, self.endpoints['institutions'])
-        return http_request(url, 'GET')
+        return requests.get(url)
