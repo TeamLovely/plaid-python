@@ -226,3 +226,42 @@ def test_institution():
         client.institution(1)
         mock_requests_get.assert_called_once_with(expected_url)
 
+
+def test_user_income():
+    client = Client('myclientid', 'mysecret', 'mytoken')
+    options = {
+        'gte': '2015-12-12',
+        'lte': '2014-12-12'
+    }
+    mock_response_data = {
+        'accounts': [],
+        'transactions': [
+            {'amount': 100},
+            {'amount': -100},
+            {'amount': -100},
+            {'amount': 100},
+            {'amount': -100},
+            {'amount': 100},
+            {'amount': 100},
+            {'amount': -100},
+            {'amount': 100},
+            {'amount': 100},
+        ]
+    }
+    mock_response = requests.Response()
+    mock_response._content = json.dumps(mock_response_data).encode('utf-8')
+
+    expected_url = urljoin(client.url, client.endpoints['transactions'])
+    expected_request_data = {
+        'secret': client.secret,
+        'client_id': client.client_id,
+        'access_token': client.access_token,
+        'options': json.dumps(options)
+    }
+
+    with patch('requests.post') as mock_requests_post:
+        mock_requests_post.return_value = mock_response
+
+        assert client.user_income(options=options) == 400
+        mock_requests_post.assert_called_once_with(expected_url, expected_request_data)
+

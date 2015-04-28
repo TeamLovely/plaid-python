@@ -1,5 +1,5 @@
 import json
-
+import datetime
 import requests
 try:
     from urllib.parse import urljoin
@@ -256,3 +256,27 @@ class Client(object):
         url = urljoin(self.url, self.endpoints['institution']).format(institution_id)
         return requests.get(url)
 
+    @require_access_token
+    def user_income(self, options=None):
+        """
+        The amount of income a user has had within some date range across all accounts we have access to. Requires
+        `access_token`. Returns the sum of all credit transactions for the last twelve months. Debit transactions are
+        ignored.
+
+        `options`   dict    Same options as `transactions`
+        """
+        if options is None:
+            options = {
+                # One year ago in isoformat
+                'gte': (datetime.datetime.now() - datetime.timedelta(365)).date().isoformat()
+            }
+
+        transactions = self.transactions(options=options).json()['transactions']
+
+        total_income = 0
+        for transaction in transactions:
+            # Credits to the account are negative. Ignore debits from the account, which are positive.
+            if transaction['amount'] < 0:
+                total_income -= transaction['amount']
+
+        return total_income
