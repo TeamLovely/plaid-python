@@ -7,13 +7,14 @@ import pytest
 import json
 from mock import patch
 
-from plaid.client import Client, require_access_token
+from plaid.client import Client, require_access_token, PermissionError
 
 
 # Unit Tests
 def test_require_access_token_decorator():
     class TestClass(object):
         access_token = 'foo'
+
         @require_access_token
         def some_func(self):
             return True
@@ -25,12 +26,13 @@ def test_require_access_token_decorator():
 def test_require_access_token_decorator_raises():
     class TestClass(object):
         access_token = None
+
         @require_access_token
         def some_func(self):
             return True
 
     obj = TestClass()
-    with pytest.raises(Exception):
+    with pytest.raises(PermissionError):
         obj.some_func()
 
 

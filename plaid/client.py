@@ -7,11 +7,14 @@ except ImportError:
     from urlparse import urljoin
 
 
+class PermissionError(OSError):
+    pass
+
+
 def require_access_token(func):
     def inner_func(self, *args, **kwargs):
         if not self.access_token:
-            raise Exception('`%s` method requires `access_token`' %
-                            func.__name__)
+            raise PermissionError('`{}` method requires `access_token`'.format(func.__name__))
         return func(self, *args, **kwargs)
     return inner_func
 
