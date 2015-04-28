@@ -18,12 +18,11 @@ def require_access_token(func):
         return func(self, *args, **kwargs)
     return inner_func
 
+
 class Client(object):
     """
     Python Plain API client https://plaid.com/docs/
     """
-
-    url = 'https://tartan.plaid.com'  # Base API URL
 
     ACCOUNT_TYPES = (
         ('amex', 'American Express',),
@@ -51,7 +50,7 @@ class Client(object):
         'transactions': '/connect/get'
     }
 
-    def __init__(self, client_id, secret, access_token=None):
+    def __init__(self, client_id, secret, access_token=None, url='https://tartan.plaid.com'):
         """
         `client_id`     str     Your Plaid client ID
         `secret`        str     Your Plaid secret
@@ -60,6 +59,7 @@ class Client(object):
         self.client_id = client_id
         self.secret = secret
         self.access_token = access_token
+        self.url = url
 
     def add_user(self, account_type, username, password, options=None):
         """

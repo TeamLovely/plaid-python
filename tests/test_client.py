@@ -36,6 +36,14 @@ def test_require_access_token_decorator_raises():
         obj.some_func()
 
 
+def test_dev_url():
+    assert Client('myclientid', 'mysecret', 'token').url == 'https://tartan.plaid.com'
+
+
+def test_prod_url():
+    assert Client('myclientid', 'mysecret', 'token', url='https://api.plaid.com').url == 'https://api.plaid.com'
+
+
 def test_add_user():
     mock_response = requests.Response()
     mock_response._content = b'{"access_token":"foo_token"}'
