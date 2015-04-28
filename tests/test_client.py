@@ -265,3 +265,130 @@ def test_user_income():
         assert client.user_income(options=options) == 400
         mock_requests_post.assert_called_once_with(expected_url, expected_request_data)
 
+
+"""
+Integration Tests. These tests hit the real Plaid developer API to make sure everything still works.
+There are no charges for requests to the dev API.
+"""
+question_mfa_type = 'bofa'
+code_mfa_type = 'chase'
+no_mfa_type = 'amex'
+test_id = 'test_id'
+test_secret = 'test_secret'
+test_username = 'plaid_test'
+test_good_password = 'plaid_good'
+test_locked_password = 'plaid_locked'
+
+
+def test_locked_password():
+    account_type = no_mfa_type
+    client = Client(test_id, test_secret)
+    response = client.add_user(account_type, test_username, test_locked_password)
+
+    assert not response.ok
+    assert 'code' in response.json()
+    assert 'message' in response.json()
+    assert 'resolve' in response.json()
+
+
+def test_code_mfa_flow():
+    account_type = code_mfa_type
+    client = Client(test_id, test_secret)
+    response1 = client.add_user(account_type, test_username, test_good_password)
+    response2 = client.connect_step(account_type, 1234)
+
+    assert response1.ok
+    assert response2.ok
+    assert 'transactions' not in response1.json()
+    assert 'accounts' not in response1.json()
+    assert 'mfa' in response1.json()
+    assert client.access_token == 'test_{}'.format(account_type)
+    assert 'transactions' in response2.json()
+    assert 'accounts' in response2.json()
+    assert 'mfa' not in response2.json()
+
+
+def test_question_mfa_flow():
+    account_type = question_mfa_type
+    client = Client(test_id, test_secret, 'test_chase')
+    response1 = client.add_user(account_type, test_username, test_good_password)
+    response2 = client.connect_step(account_type, 'again')
+    response3 = client.connect_step(account_type, 'tomato')
+
+    assert response1.ok
+    assert response2.ok
+    assert response3.ok
+    assert 'mfa' in response1.json()
+    assert 'mfa' in response2.json()
+    assert 'mfa' not in response3.json()
+    assert 'transactions' in response3.json()
+    assert 'accounts' in response3.json()
+
+
+def test_no_mfa_flow():
+    account_type = no_mfa_type
+    client = Client(test_id, test_secret)
+    response1 = client.add_user(account_type, test_username, test_good_password)
+
+    assert response1.ok
+    assert 'mfa' not in response1.json()
+    assert 'transactions' in response1.json()
+    assert 'accounts' in response1.json()
+
+
+def test_update_user_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.update_user(test_username, test_good_password)
+
+    assert response.ok
+    assert 'accounts' in response.json()
+    assert 'transactions' in response.json()
+
+
+def test_delete_user_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.delete_user()
+
+    assert response.ok
+    assert 'message' in response.json()
+
+
+def test_transactions_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.transactions()
+
+    assert response.ok
+    assert 'accounts' in response.json()
+    assert 'transactions' in response.json()
+
+
+def test_balance_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.balance()
+
+    assert response.ok
+    assert 'accounts' in response.json()
+    assert 'transactions' not in response.json()
+
+
+def test_categories_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.categories()
+
+    assert response.ok
+    assert isinstance(response.json(), list)
+    first_category = response.json()[0]
+    assert 'hierarchy' in first_category
+    assert 'type' in first_category
+    assert 'id' in first_category
+
+
+def test_category_endpoint():
+    client = Client(test_id, test_secret, 'test_amex')
+    response = client.category(17001013)
+
+    assert response.ok
+    category = response.json()
+    assert 'hierarchy' in category
+    assert 'type' in category
+    assert 'id' in category
