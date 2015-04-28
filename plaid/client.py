@@ -1,10 +1,7 @@
 import json
 import datetime
 import requests
-try:
-    from urllib.parse import urljoin
-except ImportError:
-    from urlparse import urljoin
+from urllib.parse import urljoin
 
 
 class PermissionError(OSError):
