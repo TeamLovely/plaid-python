@@ -2,13 +2,15 @@ try:
     from urllib.parse import urljoin
 except ImportError:
     from urlparse import urljoin
-
+import requests
 import pytest
-from mock import patch, Mock
+import json
+from mock import patch
 
 from plaid.client import Client, require_access_token
 
 
+# Unit Tests
 def test_require_access_token_decorator():
     class TestClass(object):
         access_token = 'foo'
@@ -32,99 +34,185 @@ def test_require_access_token_decorator_raises():
         obj.some_func()
 
 
-def test_connect():
+def test_add_user():
+    mock_response = requests.Response()
+    mock_response._content = b'{"access_token":"foo_token"}'
+    mock_response.status_code = 200
+
+    client = Client('myclientid', 'mysecret')
+    account_type = 'bofa'
+    username = 'foo'
+    password = 'bar'
+
+    expected_post_data = {
+        'type': 'bofa',
+        'username': 'foo',
+        'password': 'bar',
+        'client_id': client.client_id,
+        'secret': client.secret
+    }
+    expected_request_url = urljoin(client.url, client.endpoints['connect_user'])
+
     with patch('requests.post') as mock_requests_post:
-        mock_response = Mock()
-        mock_response.content = '{}'
         mock_requests_post.return_value = mock_response
 
-        client = Client('myclientid', 'mysecret')
+        client.add_user(account_type, username, password)
 
-        account_type = 'bofa'
-        username = 'foo'
-        password = 'bar'
-        email = 'foo@bar.com'
-
-        response = client.connect(account_type, username, password, email)
-
-        assert mock_response == response
+        assert client.access_token == 'foo_token'
+        mock_requests_post.assert_called_once_with(expected_request_url, expected_post_data)
 
 
-def test_step():
+def test_connect_step():
+    client = Client('myclientid', 'mysecret', 'token')
+    options = {'foo': 'bar'}
+
+    expected_post_data = {
+        'mfa': 'foo',
+        'access_token': client.access_token,
+        'client_id': client.client_id,
+        'type': 'bofa',
+        'secret': client.secret,
+        'options': json.dumps(options)
+    }
+    expected_request_url = urljoin(client.url, client.endpoints['connect_step'])
+
     with patch('requests.post') as mock_requests_post:
-        client = Client('myclientid', 'mysecret', 'token')
-        client.step('bofa', 'foo')
-        assert mock_requests_post.called
+        client.connect_step('bofa', 'foo', options=options)
+
+        mock_requests_post.assert_called_once_with(expected_request_url, expected_post_data)
 
 
 def test_step_requires_access_token():
     client = Client('myclientid', 'mysecret')
-    with pytest.raises(Exception):
-        client.step('bofa', 'foo')
+    with pytest.raises(PermissionError):
+        client.connect_step('bofa', 'foo')
 
 
 def test_delete_user():
+    client = Client('myclientid', 'mysecret', 'token')
+
+    expected_url = urljoin(client.url, client.endpoints['connect_user'])
+    expected_request_data = {
+        'client_id': client.client_id,
+        'secret': client.secret,
+        'access_token': client.access_token
+    }
+
     with patch('requests.delete') as mock_requests_delete:
-        client = Client('myclientid', 'mysecret', 'token')
         client.delete_user()
-        assert mock_requests_delete.called
+
+        mock_requests_delete.assert_called_once_with(expected_url, data=expected_request_data)
 
 
 def test_delete_user_requires_access_token():
     client = Client('myclientid', 'mysecret')
-    with pytest.raises(Exception):
+    with pytest.raises(PermissionError):
         client.delete_user('bofa', 'foo')
 
 
+def test_update_user():
+    client = Client('myclientid', 'mysecret', 'token')
+    username = 'foo_username'
+    password = 'foo_password'
+
+    expected_url = urljoin(client.url, client.endpoints['connect_user'])
+    expected_request_data = {
+        'client_id': client.client_id,
+        'secret': client.secret,
+        'access_token': client.access_token,
+        'username': username,
+        'password': password
+    }
+
+    with patch('requests.patch') as mock_requests_patch:
+        client.update_user(username, password)
+
+        mock_requests_patch.assert_called_once_with(expected_url, expected_request_data)
+
+
+def test_update_user_requires_access_token():
+    client = Client('myclientid', 'mysecret')
+    with pytest.raises(PermissionError):
+        client.update_user('foo', 'bar')
+
+
 def test_transactions():
-    with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret', 'token')
-        ret = client.transactions()
-        assert mock_requests_get.called
-        assert ret is not None
+    client = Client('myclientid', 'mysecret', 'token')
+    options = {'foo': 'bar'}
+
+    expected_url = urljoin(client.url, client.endpoints['transactions'])
+    expected_request_data = {
+        'client_id': client.client_id,
+        'secret': client.secret,
+        'access_token': client.access_token,
+        'options': json.dumps(options)
+    }
+
+    with patch('requests.post') as mock_requests_post:
+        client.transactions(options=options)
+
+        mock_requests_post.assert_called_once_with(expected_url, expected_request_data)
 
 
 def test_transactions_requires_access_token():
     client = Client('myclientid', 'mysecret')
-    with pytest.raises(Exception):
+    with pytest.raises(PermissionError):
         client.transactions()
 
+
 def test_balance():
+    client = Client('myclientid', 'mysecret', 'token')
+
+    expected_url = urljoin(client.url, client.endpoints['balance'])
+    expected_request_data = {
+        'client_id': client.client_id,
+        'secret': client.secret,
+        'access_token': client.access_token
+    }
+
     with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret', 'token')
-        ret = client.balance()
-        assert mock_requests_get.called
-        assert ret is not None
+        client.balance()
+        mock_requests_get.assert_called_once_with(expected_url, data=expected_request_data)
 
 
 def test_balance_requires_access_token():
     client = Client('myclientid', 'mysecret')
-    with pytest.raises(Exception):
+    with pytest.raises(PermissionError):
         client.balance()
-
-def test_entity():
-    with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret')
-        client.entity(1)
-        assert mock_requests_get.called
 
 
 def test_categories():
+    client = Client('myclientid', 'mysecret')
+    expected_url = urljoin(client.url, client.endpoints['categories'])
+
     with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret')
         client.categories()
-        assert mock_requests_get.called
+        mock_requests_get.assert_called_once_with(expected_url)
 
 
 def test_category():
+    client = Client('myclientid', 'mysecret')
+    expected_url = urljoin(client.url, client.endpoints['category']).format('1')
+
     with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret')
         client.category(1)
-        assert mock_requests_get.called
+        mock_requests_get.assert_called_once_with(expected_url)
 
 
-def test_categories_by_mapping():
+def test_institutions():
+    client = Client('myclientid', 'mysecret')
+    expected_url = urljoin(client.url, client.endpoints['institutions'])
+
     with patch('requests.get') as mock_requests_get:
-        client = Client('myclientid', 'mysecret')
-        client.categories_by_mapping('Food > Spanish Restaurant', 'plaid')
-        assert mock_requests_get.called
+        client.institutions()
+        mock_requests_get.assert_called_once_with(expected_url)
+
+
+def test_institution():
+    client = Client('myclientid', 'mysecret')
+    expected_url = urljoin(client.url, client.endpoints['institution']).format('1')
+
+    with patch('requests.get') as mock_requests_get:
+        client.institution(1)
+        mock_requests_get.assert_called_once_with(expected_url)
+
