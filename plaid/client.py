@@ -1,62 +1,53 @@
 import json
-try:
-    from urllib.parse import urljoin
-except ImportError:
-    from urlparse import urljoin
+import datetime
+import requests
+from urllib.parse import urljoin
 
-from plaid.http import http_request
 
-# @todo Sandboxing?
-# @todo "Single Request Call"
+class PermissionError(OSError):
+    pass
+
 
 def require_access_token(func):
     def inner_func(self, *args, **kwargs):
         if not self.access_token:
-            raise Exception('`%s` method requires `access_token`' %
-                            func.__name__)
+            raise PermissionError('`{}` method requires `access_token`'.format(func.__name__))
         return func(self, *args, **kwargs)
     return inner_func
 
+
 class Client(object):
     """
-    Python Plain API v2 client https://plaid.io/
-
-    See official documentation at: https://plaid.io/v2/docs
+    Python Plain API client https://plaid.com/docs/
     """
-
-    url = 'https://tartan.plaid.com'  # Base API URL
 
     ACCOUNT_TYPES = (
         ('amex', 'American Express',),
         ('bofa', 'Bank of America',),
+        ('capone360', 'Capital One 360',),
+        ('schwab', 'Charles Schwab',),
         ('chase', 'Chase',),
         ('citi', 'Citi',),
+        ('fidelity', 'Fidelity',),
+        ('pnc', 'PNC',),
+        ('svb', 'Silicon Vally Bank',),
+        ('us', 'US Bank',),
+        ('usaa', 'USAA',),
         ('wells', 'Wells Fargo',),
     )
 
-    CATEGORY_TYPES = [
-        'plaid',
-        'foursquare',
-        'factual',
-        'amex'
-    ]
-
     endpoints = {
-        'connect': '/connect',
-        'connect_step': '/connect/step',
-        'entity': '/entity',
-        'categories': '/category',
-        'category': '/category/id/%s',
-        'categories_by_mapping': '/category/map',
         'balance': '/balance',
-        'auth': '/auth',
-        'auth_step': '/auth/step',
-        'numbers': '/auth/get',
+        'categories': '/categories',
+        'category': '/categories/{}',
+        'connect_user': '/connect',
+        'connect_step': '/connect/step',
         'institutions': '/institutions',
-        'upgrade': '/upgrade'
+        'institution': '/institutions/{}',
+        'transactions': '/connect/get'
     }
 
-    def __init__(self, client_id, secret, access_token=None):
+    def __init__(self, client_id, secret, access_token=None, url='https://tartan.plaid.com'):
         """
         `client_id`     str     Your Plaid client ID
         `secret`        str     Your Plaid secret
@@ -64,23 +55,10 @@ class Client(object):
         """
         self.client_id = client_id
         self.secret = secret
-        self.access_token = None
-
-        if access_token:
-            self.set_access_token(access_token)
-
-    def set_access_token(self, access_token):
         self.access_token = access_token
+        self.url = url
 
-    def get_access_token(self):
-        return self.access_token
-
-    def get_account_types(self):
-        return self.ACCOUNT_TYPES
-
-    # Endpoints
-
-    def connect(self, account_type, username, password, email, options=None):
+    def add_user(self, account_type, username, password, options=None):
         """
         Add a bank account user/login to Plaid and receive an access token
         unless a 2nd level of authentication is required, in which case
@@ -102,74 +80,23 @@ class Client(object):
         """
         if options is None:
             options = {}
-        url = urljoin(self.url, self.endpoints['connect'])
-
-        credentials = {
-            'username': username,
-            'password': password
-        }
+        url = urljoin(self.url, self.endpoints['connect_user'])
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
             'type': account_type,
-            'credentials': json.dumps(credentials),
-            'email': email
-        }
-
-        if options:
-            data['options'] = json.dumps(options)
-
-        response = http_request(url, 'POST', data)
-
-        if response.ok:
-            json_data = json.loads(response.content)
-            if 'access_token' in json_data:
-                self.access_token = json_data['access_token']
-
-        return response
-
-    def auth(self, account_type, username, password, options=None):
-        """
-        Add a bank account user/login to Plaid and receive an access token
-        unless a 2nd level of authentication is required, in which case
-        an MFA (Multi Factor Authentication) question(s) is returned
-
-        `account_type`  str     The type of bank account you want to sign in
-                                to, must be one of the keys in `ACCOUNT_TYPES`
-        `username`      str     The username for the bank account you want to
-                                sign in to
-        `password`      str     The password for the bank account you want to
-                                sign in to
-        `options`       dict
-            `webhook`   str         URL to hit once the account's transactions
-                                    have been processed
-            `mfa_list`  boolean     List all available MFA (Multi Factor
-                                    Authentication) options
-        """
-        if options is None:
-            options = {}
-        url = urljoin(self.url, self.endpoints['auth'])
-
-        credentials = {
             'username': username,
             'password': password
         }
 
-        data = {
-            'client_id': self.client_id,
-            'secret': self.secret,
-            'type': account_type,
-            'credentials': json.dumps(credentials)
-        }
-
         if options:
             data['options'] = json.dumps(options)
 
-        response = http_request(url, 'POST', data)
+        response = requests.post(url, data)
 
         if response.ok:
-            json_data = json.loads(response.content)
+            json_data = response.json()
             if 'access_token' in json_data:
                 self.access_token = json_data['access_token']
 
@@ -207,66 +134,34 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'POST', data)
+        return requests.post(url, data)
 
     @require_access_token
-    def auth_step(self, account_type, mfa, options=None):
+    def update_user(self, username, password):
         """
-        Perform a MFA (Multi Factor Authentication) step, requires
-        `access_token`
+        Update a Plaid user's bank authentication information, requires `access_token`
 
-        `account_type`  str     The type of bank account you're performing MFA
-                                on, must match what you used in the `connect`
-                                call
-        `mfa`           str     The MFA answer, e.g. an answer to q security
-                                question or code sent to your phone, etc.
-        `options`       dict
-            `send_method`   dict    The send method your MFA answer is for,
-                                    e.g. {'type': Phone'}, should come from
-                                    the list from the `mfa_list` option in
-                                    the `connect` call
+        `username`  str     The new username for this user
+        `password`  str     The new password for this user
         """
-        if options is None:
-            options = {}
-        url = urljoin(self.url, self.endpoints['auth_step'])
+        url = urljoin(self.url, self.endpoints['connect_user'])
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
             'access_token': self.access_token,
-            'type': account_type,
-            'mfa': mfa
+            'username': username,
+            'password': password
         }
 
-        if options:
-            data['options'] = json.dumps(options)
-
-        return http_request(url, 'POST', data)
-
-    @require_access_token
-    def upgrade(self, upgrade_to):
-        """
-        Upgrade account to another plaid type
-
-        """
-        url = urljoin(self.url, self.endpoints['upgrade'])
-
-        data = {
-            'client_id': self.client_id,
-            'secret': self.secret,
-            'access_token': self.access_token,
-            'upgrade_to': upgrade_to
-        }
-
-        return http_request(url, 'POST', data)
-
+        return requests.patch(url, data)
 
     @require_access_token
     def delete_user(self):
         """
         Delete user from Plaid, requires `access_token`
         """
-        url = urljoin(self.url, self.endpoints['connect'])
+        url = urljoin(self.url, self.endpoints['connect_user'])
 
         data = {
             'client_id': self.client_id,
@@ -274,8 +169,7 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'DELETE', data)
-
+        return requests.delete(url, data=data)
 
     @require_access_token
     def transactions(self, options=None):
@@ -283,80 +177,51 @@ class Client(object):
         Fetch a list of transactions, requires `access_token`
 
         `options`   dict
-            `last`      str         Collect all transactions since this
-                                    transaction ID
+            `pending`   bool        default is false. If set to true, transactions from account activities that have
+                                    not yet posted to the account will be returned. Pending transactions will generally
+                                    show up as posted within one to three business days, depending on the type of
+                                    transaction.
+            `account`   str         Collect transactions for a specific account only, using an `account_id` returned
+                                    from the original `add_user` submission.
+            `gte`       date        Collect all recent transactions since and including the given date.
+            `lte`       date        Collect all transactions up to and including the given date. Can be used with gte
+                                    to define a range.
         """
         if options is None:
             options = {}
-        url = urljoin(self.url, self.endpoints['connect'])
+        url = urljoin(self.url, self.endpoints['transactions'])
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
-            'access_token': self.access_token,
-            'options': json.dumps(options)
+            'access_token': self.access_token
         }
 
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
-
-    def entity(self, entity_id, options=None):
-        """
-        Fetch a specific entity's data
-
-        `entity_id`     str     Entity id to fetch
-        """
-        url = urljoin(self.url, self.endpoints['entity'])
-        return http_request(url, 'GET', {'entity_id': entity_id})
+        return requests.post(url, data)
 
     def categories(self):
         """
         Fetch all categories
         """
         url = urljoin(self.url, self.endpoints['categories'])
-        return http_request(url, 'GET')
+        return requests.get(url)
 
-    def category(self, category_id, options=None):
+    def category(self, category_id):
         """
         Fetch a specific category
 
         `category_id`   str     Category id to fetch
         """
-        url = urljoin(self.url, self.endpoints['category']) % category_id
-        return http_request(url, 'GET')
-
-    def categories_by_mapping(self, mapping, category_type, options=None):
-        """
-        Fetch category data by category mapping and data source
-
-        `mapping`       str     The category mapping to explore,
-                                e.g. "Food > Spanish Restaurant",
-                                see all categories here:
-                                https://github.com/plaid/Support/blob/master/categories.md
-        `category_type` str     The category data source, must be a value from
-                                `CATEGORY_TYPES`
-        `options`       dict
-            `full_match`    boolean     Whether to try an exact match for
-                                        `mapping`. Setting to `False` will
-                                        return best match.
-        """
-        if options is None:
-            options = {}
-        url = urljoin(self.url, self.endpoints['categories_by_mapping'])
-        data = {
-            'mapping': mapping,
-            'type': category_type
-        }
-        if options:
-            data['options'] = json.dumps(options)
-        return http_request(url, 'GET', data)
+        url = urljoin(self.url, self.endpoints['category']).format(category_id)
+        return requests.get(url)
 
     @require_access_token
     def balance(self, options=None):
         """
-        Fetch the real-time balance of the user's accounts
+        Fetch the real-time balance of the user's accounts, requires `access_token`
 
         """
         if options is None:
@@ -370,26 +235,45 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
-
-    @require_access_token
-    def numbers(self):
-        """
-        Fetch the account/routing numbers for this user
-
-        """
-        url = urljoin(self.url, self.endpoints['numbers'])
-        data = {
-            'client_id': self.client_id,
-            'secret': self.secret,
-            'access_token': self.access_token
-        }
-
-        return http_request(url, 'POST', data)
+        return requests.get(url, data=data)
 
     def institutions(self):
         """
         Fetch the available institutions
         """
         url = urljoin(self.url, self.endpoints['institutions'])
-        return http_request(url, 'GET')
+        return requests.get(url)
+
+    def institution(self, institution_id):
+        """
+        Fetch a specific institution
+
+        `institution_id`   str     Institution id to fetch
+        """
+        url = urljoin(self.url, self.endpoints['institution']).format(institution_id)
+        return requests.get(url)
+
+    @require_access_token
+    def user_income(self, options=None):
+        """
+        The amount of income a user has had within some date range across all accounts we have access to. Requires
+        `access_token`. Returns the sum of all credit transactions for the last twelve months. Debit transactions are
+        ignored.
+
+        `options`   dict    Same options as `transactions`
+        """
+        if options is None:
+            options = {
+                # One year ago in isoformat
+                'gte': (datetime.datetime.now() - datetime.timedelta(365)).date().isoformat()
+            }
+
+        transactions = self.transactions(options=options).json()['transactions']
+
+        total_income = 0
+        for transaction in transactions:
+            # Credits to the account are negative. Ignore debits from the account, which are positive.
+            if transaction['amount'] < 0:
+                total_income -= transaction['amount']
+
+        return total_income
